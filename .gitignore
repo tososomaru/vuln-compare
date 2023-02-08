@@ -4,3 +4,11 @@
 
 .venv/
 
+vuln-list
+**/*.pkl
+dumps/
+*.db
+
+**/__pycache__/
+.pytest_cache/
+
