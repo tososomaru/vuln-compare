@@ -1,5 +1,13 @@
-from vuln_compare.unify import GitlabAdvisoryLoader
+import pytest
+
+from vuln_compare.load import GitlabAdvisoryLoader
 from vuln_compare.model import Package, SeverityItem
+
+
+@pytest.fixture
+def loader() -> GitlabAdvisoryLoader:
+    return GitlabAdvisoryLoader()
+
 
 model = {
     "Identifier": "CVE-2019-11289",
@@ -26,8 +34,7 @@ model = {
 }
 
 
-def test_create_package():
-    loader = GitlabAdvisoryLoader()
+def test_create_package(loader):
     expected_package = Package(
         ecosystem="go",
         name="code.cloudfoundry.org/gorouter/common/secure",
@@ -39,8 +46,7 @@ def test_create_package():
     assert package == expected_package
 
 
-def test_extract_severity():
-    loader = GitlabAdvisoryLoader()
+def test_extract_severity(loader):
     expected_severity = [
         SeverityItem(
             type="CVSS_V2",
@@ -57,7 +63,5 @@ def test_extract_severity():
     assert metric == expected_severity
 
 
-def test_extract_cve_identifier():
-    loader = GitlabAdvisoryLoader()
-
+def test_extract_cve_identifier(loader):
     assert loader.extract_identifier(model) == "CVE-2019-11289"

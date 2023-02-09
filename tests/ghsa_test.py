@@ -1,5 +1,13 @@
-from vuln_compare.unify import GithubAdvisoryLoader
+import pytest
+
+from vuln_compare.load import GithubAdvisoryLoader
 from vuln_compare.model import Package, SeverityItem
+
+
+@pytest.fixture
+def loader() -> GithubAdvisoryLoader:
+    return GithubAdvisoryLoader()
+
 
 model = {
     "Severity": "CRITICAL",
@@ -62,8 +70,7 @@ model = {
 }
 
 
-def test_create_package():
-    loader = GithubAdvisoryLoader()
+def test_create_package(loader):
 
     expected_package = Package(
         ecosystem="go",
@@ -75,8 +82,7 @@ def test_create_package():
     assert package == expected_package
 
 
-def test_create_package_slug_when_pgk_name_is_link_to_go_dev():
-    loader = GithubAdvisoryLoader()
+def test_create_package_slug_when_pgk_name_is_link_to_go_dev(loader):
 
     expected_package = Package(
         ecosystem="go",
@@ -96,8 +102,8 @@ def test_create_package_slug_when_pgk_name_is_link_to_go_dev():
     assert package == expected_package
 
 
-def test_extract_severity():
-    loader = GithubAdvisoryLoader()
+def test_extract_severity(loader):
+
     expected_severity = [
         SeverityItem(
             type="CVSS_V3",
@@ -110,15 +116,11 @@ def test_extract_severity():
     assert metric == expected_severity
 
 
-def test_extract_identifier():
-    loader = GithubAdvisoryLoader()
-
+def test_extract_identifier(loader):
     assert loader.extract_identifier(model) == "CVE-2018-25046"
 
 
-def test_extract_identifier_when_cve_doesnt_exist_then_extract_ghsa():
-    loader = GithubAdvisoryLoader()
-
+def test_extract_identifier_when_cve_doesnt_exist_then_extract_ghsa(loader):
     assert loader.extract_identifier(
         {
             "Advisory": {

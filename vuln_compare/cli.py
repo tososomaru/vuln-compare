@@ -1,6 +1,9 @@
+import argparse
+import logging
 import os
 
-from vuln_compare.unify import unify_vulnerabilities
+
+from vuln_compare.load import load_vulnerabilities
 
 DEFAULT_DATABASES_PATH = os.path.join(os.getcwd(), "vuln-list")
 
@@ -12,12 +15,28 @@ def check_databases_folder(databases_path: str):
 
 
 def main():
-    #TODO use cli
-    databases_path = DEFAULT_DATABASES_PATH
+    logging.basicConfig(level=logging.INFO)
+    parser = argparse.ArgumentParser(description='Compare')
+    parser.add_argument(
+        '-d',
+        '--databases',
+        nargs='*',
+        help='Databases to compare',
+        type=str,
+        default=[]
+    )
+    parser.add_argument(
+        '--databases-path',
+        help='Path to databases',
+        type=str,
+        default=DEFAULT_DATABASES_PATH
+    )
 
-    check_databases_folder(databases_path)
+    args = parser.parse_args()
 
-    models = unify_vulnerabilities(databases_path)
+    check_databases_folder(args.databases_path)
+
+    models = load_vulnerabilities(args.databases_path, args.databases)
 
 
 if __name__ == "__main__":

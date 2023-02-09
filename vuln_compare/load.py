@@ -1,12 +1,15 @@
+import logging
 import json
 import os
 from abc import ABC, abstractmethod
-from typing import Iterator, Dict
+from typing import Iterator, Dict, TypeAlias
 
 from tqdm import tqdm
 
 from vuln_compare.model import Package, SeverityItem, UnifiedVulnerabilityModel
 from vuln_compare.util import scan_dir_recursively, create_purl
+
+Severity: TypeAlias = list[SeverityItem]
 
 
 class AdvisoryLoader(ABC):
@@ -23,7 +26,7 @@ class AdvisoryLoader(ABC):
         raise NotImplementedError()
 
     @abstractmethod
-    def extract_severity(self, model: dict) -> list[SeverityItem]:
+    def extract_severity(self, model: dict) -> Severity:
         raise NotImplementedError()
 
     def scan_database(self, database_path: str) -> Iterator[UnifiedVulnerabilityModel]:
@@ -73,7 +76,7 @@ class GithubAdvisoryLoader(AdvisoryLoader):
             filtered_identifiers = list(filter(lambda x: x["Type"] == "GHSA", identifiers))
         return filtered_identifiers[0]["Value"]
 
-    def extract_severity(self, model: dict) -> list[SeverityItem]:
+    def extract_severity(self, model: dict) -> Severity:
         advisory = model["Advisory"]
         return [
             SeverityItem(
@@ -91,7 +94,7 @@ class GitlabAdvisoryLoader(AdvisoryLoader):
         slug: str = model["PackageSlug"]
         first_slash = slug.find("/")
         ecosystem = slug[:first_slash]
-        pkg_name = slug[first_slash+1:]
+        pkg_name = slug[first_slash + 1:]
         return Package(
             ecosystem=ecosystem,
             name=pkg_name,
@@ -101,16 +104,16 @@ class GitlabAdvisoryLoader(AdvisoryLoader):
     def extract_identifier(self, model: dict) -> str:
         return model["Identifier"]
 
-    def extract_severity(self, model: dict) -> list[SeverityItem]:
+    def extract_severity(self, model: dict) -> Severity:
         severity = []
-        if model["CvssV2"] is not None:
+        if "CvssV2" in model:
             severity.append(
                 SeverityItem(
                     type="CVSS_V2",
                     score=model["CvssV2"]
                 )
             )
-        if model["CvssV3"] is not None:
+        if "CvssV3" in model:
             severity.append(
                 SeverityItem(
                     type="CVSS_V3",
@@ -132,7 +135,7 @@ class NvdLoader(AdvisoryLoader):
     def extract_identifier(self, model: dict) -> str:
         return model["cve"]["CVE_data_meta"]["ID"]
 
-    def extract_severity(self, model: dict) -> list[SeverityItem]:
+    def extract_severity(self, model: dict) -> Severity:
         severity = []
         metricV2 = model["impact"].get("baseMetricV2")
         if metricV2 is not None:
@@ -151,9 +154,76 @@ class NvdLoader(AdvisoryLoader):
         return severity
 
 
+class OsvFormatBasedLoader(AdvisoryLoader, ABC):
+
+    def extract_severity(self, model: dict) -> Severity:
+        if "severity" not in model:
+            return list()
+        return [
+            SeverityItem(type=s["type"], score=s["score"])
+            for s in model["severity"]
+        ]
+
+    def extract_identifier(self, model: dict) -> str:
+
+        identifier: str = model["id"]
+
+        if identifier.startswith("CVE"):
+            return identifier
+
+        if "aliases" in model:
+            def get_identifier_by_type(_type: str) -> str | None:
+                identifiers = list(filter(lambda alias: alias.startswith(_type), model["aliases"]))
+                return identifiers[0] if len(identifiers) > 0 else None
+
+            cve = get_identifier_by_type("CVE")
+            if cve is not None:
+                return cve
+
+            ghsa = get_identifier_by_type("GHSA")
+            if ghsa is not None:
+                return ghsa
+
+        return identifier
+
+
+class OsvLoader(OsvFormatBasedLoader):
+
+    def database_name(self) -> str:
+        return "osv"
+
+    def create_package(self, model: dict) -> Package:
+        # TODO
+        pkg = model["affected"][0]["package"]
+        return Package(
+            ecosystem=pkg["ecosystem"],
+            name=pkg["name"],
+            purl=pkg["purl"]
+        )
+
+
+class GoLoader(OsvFormatBasedLoader):
+
+    def database_name(self) -> str:
+        return "go"
+
+    def create_package(self, model: dict) -> Package:
+        return Package(
+            ecosystem="go",
+            name=model["module"],
+            purl=create_purl(_type="go", name=model["module"])
+        )
+
+    def extract_severity(self, model: dict) -> Severity:
+        # TODO
+        pass
+
+
 loaders = [
     GithubAdvisoryLoader(),
-    GitlabAdvisoryLoader()
+    GitlabAdvisoryLoader(),
+    NvdLoader(),
+    OsvLoader()
 ]
 
 
@@ -161,12 +231,23 @@ def init_loaders() -> Dict[str, AdvisoryLoader]:
     return {loader.database_name(): loader for loader in loaders}
 
 
-def unify_vulnerabilities(databases_path: str) -> list[UnifiedVulnerabilityModel]:
-    loaders_map = init_loaders()
-    print(f"Supported databases: {list(loaders_map.keys())}")
+def load_vulnerabilities(databases_path: str, databases: list[str]) -> list[UnifiedVulnerabilityModel]:
+    supported_databases = [loader.database_name() for loader in loaders]
+    logging.info(f"Supported databases: {supported_databases}")
+
+    scan_all = len(databases) == 0
+
+    if not scan_all:
+        for database in databases:
+            if database not in supported_databases:
+                raise ValueError(f"'{database}' database is not supported")
 
     models = []
-    for _, loader in loaders_map.items():
+    for loader in loaders:
+        if not scan_all and loader.database_name() not in databases:
+            logging.info(f"Skip scan {loader.database_name()}")
+            continue
+        logging.info(f"Scan {loader.database_name()}")
         for model in tqdm(loader.scan_database(databases_path)):
             models.append(model)
 

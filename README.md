@@ -9,11 +9,13 @@ git clone https://github.com/aquasecurity/vuln-list.git --single-branch --depth 
 poetry run vuln-compare
 ```
 
-run tests
+run tests:
 ```shell
 pytest
 ```
 
 https://docs.gitlab.com/ee/user/application_security/vulnerabilities/severities.html
+
 https://gitlab.com/gitlab-org/security-products/gemnasium-db
+
 https://github.com/package-url/purl-spec
